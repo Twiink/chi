@@ -325,10 +325,11 @@ func (cw *compressResponseWriter) WriteHeader(code int) {
 		return
 	}
 
+	cw.Header().Add("Vary", "Accept-Encoding")
+
 	if cw.encoding != "" {
 		cw.compressible = true
 		cw.Header().Set("Content-Encoding", cw.encoding)
-		cw.Header().Add("Vary", "Accept-Encoding")
 
 		// The content-length after compression is unknown
 		cw.Header().Del("Content-Length")

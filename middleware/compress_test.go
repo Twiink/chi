@@ -13,6 +13,50 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+func TestCompressorVaryUncompressedResponse(t *testing.T) {
+	for _, encoding := range []string{"", "identity", "br", "gzip"} {
+		t.Run(encoding, func(t *testing.T) {
+			h := Compress(5)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "text/plain")
+				w.Header().Set("Content-Length", "5")
+				w.Header().Set("Vary", "Origin")
+				w.Header().Set("Cache-Control", "public, max-age=60")
+				w.Write([]byte("hello"))
+			}))
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			if encoding != "" {
+				req.Header.Set("Accept-Encoding", encoding)
+			}
+			rr := httptest.NewRecorder()
+			h.ServeHTTP(rr, req)
+			res := rr.Result()
+			defer res.Body.Close()
+
+			if vary := strings.Join(res.Header.Values("Vary"), ", "); vary != "Origin, Accept-Encoding" {
+				t.Errorf("Vary = %q, want Origin, Accept-Encoding", vary)
+			}
+			var body io.Reader = res.Body
+			if encoding == "gzip" {
+				if got := res.Header.Get("Content-Encoding"); got != "gzip" {
+					t.Fatalf("Content-Encoding = %q, want gzip", got)
+				}
+				reader, err := gzip.NewReader(body)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer reader.Close()
+				body = reader
+			} else if res.Header.Get("Content-Encoding") != "" || res.ContentLength != 5 {
+				t.Errorf("unexpected uncompressed response headers: %v", res.Header)
+			}
+			data, err := io.ReadAll(body)
+			if err != nil || string(data) != "hello" {
+				t.Errorf("body = %q, error = %v", data, err)
+			}
+		})
+	}
+}
+
 func TestCompressor(t *testing.T) {
 	r := chi.NewRouter()
 
